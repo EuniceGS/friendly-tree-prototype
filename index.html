@@ -222,4 +222,56 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('[data-public-section]').forEach(b=>b.onclick=()=>{enterPublic();setTimeout(()=>document.getElementById(b.dataset.publicSection)?.scrollIntoView({behavior:'smooth',block:'start'}),50)});
   document.body.classList.remove('public-mode');applyRole('');
 });
+</script>
+<script>
+// 會議紀錄延伸互動原型：地圖/圖表連動、樹種搜尋、KPI 與補植追蹤。
+document.addEventListener('DOMContentLoaded',()=>{
+  const style=document.createElement('style');
+  style.textContent=`
+    .prototype-note{font-size:11px;color:#6b7d8e;margin-top:7px}
+    .map-legend-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:10px;color:#607583;margin-top:9px}
+    .heat-dot{width:11px;height:11px;border-radius:50%;display:inline-block;border:1px solid #fff;box-shadow:0 0 0 1px #b6c9c9}
+    .heat-low{background:#d9f3e9}.heat-mid{background:#83c9aa}.heat-high{background:#0f766e}
+    .district-label{position:absolute;z-index:3;font-size:10px;font-weight:700;color:#19324a;pointer-events:none}
+    .layer-control{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.layer-control label{font-size:10px;background:#f5f8f9;border:1px solid #dfe8ed;padding:6px 8px;border-radius:8px;cursor:pointer}
+    .layer-control input{accent-color:#0f766e;margin-right:4px}
+    .suggestions{position:absolute;z-index:20;left:0;right:0;top:100%;background:#fff;border:1px solid #dfe8ed;border-radius:8px;box-shadow:0 12px 25px #12304422;display:none;max-height:180px;overflow:auto}
+    .suggestions button{display:block;width:100%;border:0;background:#fff;text-align:left;padding:9px 10px;font-size:12px}.suggestions button:hover{background:#e8f5f2}
+    .autocomplete{position:relative}.kpi-alert{border-left:4px solid #d95c5c;background:#fff1f0;color:#8e3535;padding:12px 14px;border-radius:8px;font-size:12px;margin-bottom:14px}
+    .schedule-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.schedule-grid .card{box-shadow:none;background:#f8fbfb}.mini-progress{height:7px;background:#e8eeee;border-radius:99px;overflow:hidden;margin-top:8px}.mini-progress i{display:block;height:100%;background:#0f766e;border-radius:99px}
+    @media(max-width:680px){.schedule-grid{grid-template-columns:repeat(2,1fr)}}
+  `;document.head.appendChild(style);
+
+  // 1. 行政區熱圖與局處圖層篩選（原型以示意區塊呈現，正式版替換為臺中市 GeoJSON/圖資服務）。
+  const dash=document.querySelector('#dashboard');
+  if(dash){
+    const map=dash.querySelector('.map'), filter=dash.querySelector('.map')?.closest('.panel')?.querySelector('select');
+    const districtData={
+      '東區':{count:420,dept:'環保局',cls:'a'},'北屯區':{count:315,dept:'教育局',cls:'b'},
+      '大里區':{count:860,dept:'農業局',cls:'c'},'西屯區':{count:190,dept:'民政局',cls:'d'}
+    };
+    if(map){
+      map.querySelectorAll('.district').forEach((el,i)=>{const name=Object.keys(districtData)[i];el.dataset.district=name;el.title=`${name}｜${districtData[name].count} 株`;el.style.cursor='pointer';el.onclick=()=>{if(filter)filter.value=districtData[name].dept;updateMap()}});
+      [['東區','24%','38%'],['北屯區','52%','22%'],['大里區','72%','54%'],['西屯區','39%','72%']].forEach(([n,l,t])=>{const x=document.createElement('span');x.className='district-label';x.textContent=n;x.style.left=l;x.style.top=t;map.appendChild(x)});
+      map.insertAdjacentHTML('beforeend','<div class="prototype-note" style="position:absolute;right:10px;top:10px;background:#ffffffd9;padding:5px 7px;border-radius:6px;z-index:4">原型示意圖層｜正式版接臺中市行政區圖資</div>');
+      map.parentElement.insertAdjacentHTML('beforeend','<div class="map-legend-row"><span class="heat-dot heat-low"></span>低密度 <span class="heat-dot heat-mid"></span>中密度 <span class="heat-dot heat-high"></span>高密度</div><div class="layer-control"><label><input type="checkbox" checked data-layer="農業局">農業局</label><label><input type="checkbox" checked data-layer="環保局">環保局</label><label><input type="checkbox" checked data-layer="民政局">民政局</label><label><input type="checkbox" checked data-layer="教育局">教育局</label></div>');
+      const updateMap=()=>{const dept=filter?.value||'全部局處';map.querySelectorAll('.district').forEach(el=>{const d=districtData[el.dataset.district];const enabled=map.parentElement.querySelector(`[data-layer="${d.dept}"]`)?.checked!==false;el.style.display=(dept==='全部局處'||d.dept===dept)&&enabled?'':'none';const ratio=d.count/860;el.style.filter=`saturate(${.7+ratio*.8})`;el.style.opacity=dept==='全部局處'?'1':(d.dept===dept?'1':'.22')})};
+      filter?.addEventListener('change',updateMap);map.parentElement.querySelectorAll('[data-layer]').forEach(x=>x.addEventListener('change',updateMap));updateMap();
+    }
+    const bars=[...dash.querySelectorAll('.chart .barwrap')];
+    bars.forEach(b=>{b.style.cursor='pointer';b.title='點擊以篩選地圖與統計';b.onclick=()=>{const dept=b.querySelector('span')?.textContent; if(filter&&[...filter.options].some(o=>o.textContent===dept)){filter.value=dept;filter.dispatchEvent(new Event('change'));toast(`已依${dept}更新地圖圖層`)}}});
+    const chartHead=dash.querySelector('.chart')?.parentElement?.parentElement?.querySelector('.head');if(chartHead)chartHead.insertAdjacentHTML('beforeend','<span class="prototype-note">點擊柱狀圖可同步篩選地圖</span>');
+  }
+
+  // 2. 樹種關鍵字即時搜尋、標準名稱選取與歷史/未來資料歸類示範。
+  const speciesNames=[['烏桕',['烏救','木部烏桕'],'原生種'],['大花紫薇',['紫薇'],'非原生種'],['欖仁樹',['大葉欖仁'],'非原生種'],['黃花風鈴木',['風鈴木'],'非原生種'],['臺灣欒樹',['臺灣欒樹','欒樹'],'原生種']];
+  const modalSpecies=document.querySelector('#modal input[placeholder*="大花紫薇"]');
+  if(modalSpecies){const wrap=modalSpecies.parentElement;wrap.classList.add('autocomplete');wrap.insertAdjacentHTML('beforeend','<div class="suggestions" id="speciesSuggestions"></div>');const box=wrap.querySelector('#speciesSuggestions');const render=()=>{const q=modalSpecies.value.trim().toLowerCase();const hits=speciesNames.filter(([std,aliases])=>!q||std.toLowerCase().includes(q)||aliases.some(a=>a.toLowerCase().includes(q))).slice(0,6);box.innerHTML=hits.map(([std,aliases,native])=>`<button type="button" data-species="${std}"><b>${std}</b>　<small>${native}｜俗名：${aliases.join('、')}</small></button>`).join('')||'<div style="padding:10px;font-size:11px;color:#6b7d8e">無相符標準名稱，可保留自訂名稱送審</div>';box.style.display='block';box.querySelectorAll('button').forEach(b=>b.onclick=()=>{modalSpecies.value=b.dataset.species;box.style.display='none';toast(`已選取標準樹種：${b.dataset.species}`)});};modalSpecies.addEventListener('input',render);modalSpecies.addEventListener('focus',render);document.addEventListener('click',e=>{if(!wrap.contains(e.target))box.style.display='none'});wrap.insertAdjacentHTML('beforeend','<div class="prototype-note">輸入關鍵字即時比對；正式版將寫入標準樹種代碼</div>')}
+  const speciesPage=document.querySelector('#species');if(speciesPage){const head=speciesPage.querySelector('.head');if(head&&!speciesPage.querySelector('#speciesSearch')){head.insertAdjacentHTML('beforeend','<div style="display:flex;gap:6px;align-items:center"><input id="speciesSearch" class="search" style="width:180px" placeholder="搜尋標準名稱或俗名"><button class="ghost" id="normalizeAll">套用更新</button></div>');const search=speciesPage.querySelector('#speciesSearch');search.oninput=()=>{const q=search.value.toLowerCase();speciesPage.querySelectorAll('tbody tr').forEach(r=>r.style.display=r.textContent.toLowerCase().includes(q)?'':'none')};speciesPage.querySelector('#normalizeAll').onclick=()=>toast('已同步更新歷史資料，未來填報會自動歸類至標準名稱')}}
+
+  // 3. KPI 負成長警示、應補植欄位及秋冬補植追蹤。
+  const reports=document.querySelector('#reports');if(reports&&!reports.querySelector('#kpiReplacementPanel')){const p=document.createElement('div');p.className='panel';p.id='kpiReplacementPanel';p.style.marginTop='17px';p.innerHTML=`<div class="head"><div><h2>KPI 負成長與補植追蹤</h2><span>死亡／移除與應補植數量連動</span></div><button class="ghost" id="showOnlyPending">只看待補植</button></div><div class="body"><div class="kpi-alert"><b>負成長警示：</b>環保局／東區目前 -50 株；農業局／大里區目前 -28 株。系統已依死亡／移除數量建立應補植追蹤。</div><div class="schedule-grid"><div class="card"><div class="stat-label">應補植株數</div><div class="stat">78 <small style="font-size:12px">株</small></div><div class="trend warn">需於秋冬完成</div></div><div class="card"><div class="stat-label">已補植</div><div class="stat">20 <small style="font-size:12px">株</small></div><div class="trend">完成 25.6%</div></div><div class="card"><div class="stat-label">尚待補植</div><div class="stat">58 <small style="font-size:12px">株</small></div><div class="trend warn">持續追蹤</div></div><div class="card"><div class="stat-label">逾期案件</div><div class="stat">1 <small style="font-size:12px">件</small></div><div class="trend" style="color:#b64242">需主管處理</div></div></div><div class="table-wrap" style="margin-top:15px"><table class="table" id="replacementTable"><thead><tr><th>局處／行政區</th><th>死亡／移除</th><th>應補植</th><th>已補植</th><th>尚待補植</th><th>預計季節</th><th>狀態</th></tr></thead><tbody><tr data-pending="50"><td>環保局／東區</td><td>50 株</td><td>50 株</td><td>0 株</td><td><b>50 株</b></td><td>2026 秋冬</td><td><span class="badge red">待排程</span></td></tr><tr data-pending="8"><td>農業局／大里區</td><td>28 株</td><td>28 株</td><td>20 株</td><td><b>8 株</b></td><td>2026 11 月</td><td><span class="badge yellow">部分完成</span></td></tr></tbody></table></div><div class="prototype-note">正式版可由資料庫依月份、局處、行政區及案件狀態動態彙總；本區為原型示範。</div></div>`;reports.appendChild(p);p.querySelector('#showOnlyPending').onclick=()=>{p.querySelectorAll('#replacementTable tbody tr').forEach(r=>r.style.display=Number(r.dataset.pending)>0?'':'none');toast('已只顯示尚待補植案件')}}
+
+  const monthly=document.querySelector('#monthly');if(monthly&&!monthly.querySelector('#replacementInputs')){const target=monthly.querySelector('#monthlyRemoved')?.closest('.cards');if(target){const p=document.createElement('div');p.className='panel';p.id='replacementInputs';p.style.marginTop='17px';p.innerHTML='<div class="head"><div><h2>應補植追蹤</h2><span>由死亡／移除數量建立補植計畫</span></div><span class="badge yellow">待填報</span></div><div class="body"><div class="form-grid"><div class="field"><label>應補植株數</label><input id="requiredReplacement" type="number" value="1" min="0"></div><div class="field"><label>預計補植月份</label><select id="replacementMonth"><option>2026 年 11 月</option><option>2026 年 12 月</option><option>2027 年 1 月</option></select></div><div class="field"><label>補植狀態</label><select><option>待排程</option><option>已排程</option><option>部分完成</option><option>已完成待複查</option></select></div><div class="field"><label>尚待補植株數</label><input id="pendingReplacement" type="number" value="1" readonly class="system-value"></div></div><div class="notice" style="margin-top:13px;margin-bottom:0">死亡／移除株數與應補植數量會保留關聯；完成秋冬補植後，局處再新增補植明細及成果照片，供低碳辦複查銷案。</div></div></div>';target.parentElement.insertBefore(p,target.nextSibling);}}
+});
 </script></body></html>
